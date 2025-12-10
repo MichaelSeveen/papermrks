@@ -170,9 +170,11 @@ export const Route = createFileRoute("/api/bookmarks/sync")({
                   ]);
                 }
 
-                // 2. Sync collections (use userId_slug compound unique constraint)
+                // 2. Sync collections and build local-to-cloud ID mapping
+                const collectionIdMap = new Map<string, string>();
+
                 if (payload.collections.length > 0) {
-                  await Promise.all(
+                  const upsertedCollections = await Promise.all(
                     payload.collections.map((col) =>
                       tx.collection.upsert({
                         where: {
@@ -199,6 +201,13 @@ export const Route = createFileRoute("/api/bookmarks/sync")({
                       })
                     )
                   );
+
+                  // Build mapping from local ID to cloud ID
+                  for (let i = 0; i < payload.collections.length; i++) {
+                    const localId = payload.collections[i].id;
+                    const cloudId = upsertedCollections[i].id;
+                    collectionIdMap.set(localId, cloudId);
+                  }
                 }
 
                 // 3. Sync tags (batch upsert to avoid duplicate slugs)
@@ -232,10 +241,56 @@ export const Route = createFileRoute("/api/bookmarks/sync")({
                   );
                 }
 
-                // 4. Sync items
+                // 4. Sync items (use mapped collection IDs)
                 if (payload.items.length > 0) {
+                  // Get or find valid collection IDs for items
+                  const itemsWithValidCollections = await Promise.all(
+                    payload.items.map(async (item) => {
+                      // First try the mapping
+                      let validCollectionId = collectionIdMap.get(
+                        item.collectionId
+                      );
+
+                      if (!validCollectionId) {
+                        // Collection wasn't in payload, check if it exists in cloud directly
+                        const existingCollection =
+                          await tx.collection.findFirst({
+                            where: { id: item.collectionId, userId },
+                          });
+
+                        if (existingCollection) {
+                          validCollectionId = existingCollection.id;
+                        } else {
+                          // Fallback to user's default collection
+                          const defaultCollection =
+                            await tx.collection.findFirst({
+                              where: { userId, isDefault: true },
+                            });
+
+                          if (defaultCollection) {
+                            validCollectionId = defaultCollection.id;
+                          } else {
+                            // Last resort: create a default collection
+                            const newDefault = await tx.collection.create({
+                              data: {
+                                userId,
+                                name: "Bookmarks",
+                                slug: "bookmarks",
+                                color: "#F2542C",
+                                isDefault: true,
+                              },
+                            });
+                            validCollectionId = newDefault.id;
+                          }
+                        }
+                      }
+
+                      return { ...item, collectionId: validCollectionId };
+                    })
+                  );
+
                   await Promise.all(
-                    payload.items.map((item) =>
+                    itemsWithValidCollections.map((item) =>
                       tx.item.upsert({
                         where: { id: item.id },
                         create: {
@@ -257,7 +312,7 @@ export const Route = createFileRoute("/api/bookmarks/sync")({
                           updatedAt: new Date(item.updatedAt),
                         },
                         update: {
-                          collectionId: item.collectionId, // Support moving between collections
+                          collectionId: item.collectionId,
                           title: item.title,
                           description: item.description,
                           summary: item.summary,
