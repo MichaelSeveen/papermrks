@@ -1,17 +1,18 @@
+import { PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
-import { Plus, Loader2 } from "lucide-react";
 import {
   hasMultipleItems,
   parseMultipleInputs,
   type ParsedItem,
 } from "@/helpers/input-parser";
+import { Button } from "../ui/button";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
-  InputGroupText,
 } from "../ui/input-group";
-import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 
 interface BookmarkInputProps {
   onAdd: (
@@ -63,7 +64,6 @@ export function BookmarkInput({
   const handlePaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pastedText = e.clipboardData.getData("text");
 
-    // Check if paste contains multiple items (multiple lines)
     if (hasMultipleItems(pastedText)) {
       e.preventDefault();
 
@@ -81,7 +81,6 @@ export function BookmarkInput({
         setTimeout(() => setError(null), 2000);
       }
     }
-    // Single line - let default paste behavior happen, user can press Enter
   };
 
   const showAddButton = input.trim().length > 0;
@@ -95,17 +94,11 @@ export function BookmarkInput({
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder="Add bookmark, color, or text • Press Enter to save • Paste multiple lines to bulk add"
+          placeholder="Add link, color, or text • Insert multiple items to add at once..."
           disabled={isProcessing}
         />
         <InputGroupAddon>
-          <InputGroupText>
-            {isProcessing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-          </InputGroupText>
+          {isProcessing ? <Spinner /> : <HugeiconsIcon icon={PlusSignIcon} />}
         </InputGroupAddon>
         <InputGroupAddon align="inline-end">
           {showAddButton && (
@@ -115,7 +108,7 @@ export function BookmarkInput({
               onClick={handleAdd}
               disabled={isProcessing}
             >
-              {isProcessing ? "Adding..." : "Add"}
+              Enter
             </Button>
           )}
         </InputGroupAddon>

@@ -1,12 +1,17 @@
 import { useCallback, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ensureDefaultCollection, getDB, type LocalItem } from "@/lib/dexie";
+import {
+  ensureDefaultCollection,
+  getDB,
+  ItemType,
+  type LocalItem,
+} from "@/lib/dexie";
 import {
   getFaviconURL,
   validateAndNormalizeURL,
 } from "@/helpers/url-validator";
 import { formatColor, isValidColor } from "@/helpers/color-validator";
-import { slugifyTag } from "@/lib/ai";
+import { slugify } from "@/lib/slugify";
 import type { ParsedItem } from "@/helpers/input-parser";
 
 export function useBookmarks(
@@ -51,26 +56,21 @@ export function useBookmarks(
       try {
         const db = getDB(userId);
 
-        // Ensure default collection exists
         const defaultCollection = await ensureDefaultCollection(db, userId);
 
-        // Classify input type (locally, no API needed)
-        const urlValidation = validateAndNormalizeURL(rawInput);
         const isColor = isValidColor(rawInput);
+        const urlValidation = validateAndNormalizeURL(rawInput);
 
-        console.log("urlValidation", urlValidation);
-        console.log("isColor", isColor);
-
-        let itemType: "BOOKMARK" | "COLOR" | "TEXT";
+        let itemType: ItemType;
         let normalizedUrl: string | undefined;
         let colorValue: string | undefined;
 
-        if (urlValidation.isValid) {
-          itemType = "BOOKMARK";
-          normalizedUrl = urlValidation.normalizedUrl;
-        } else if (isColor) {
+        if (isColor) {
           itemType = "COLOR";
           colorValue = formatColor(rawInput);
+        } else if (urlValidation.isValid) {
+          itemType = "BOOKMARK";
+          normalizedUrl = urlValidation.normalizedUrl;
         } else {
           itemType = "TEXT";
         }
@@ -290,11 +290,9 @@ async function processBookmarkViaAPI(
 
     const metadata = await metadataResponse.json();
 
-    // Update item with metadata
     await db.items.update(itemId, {
       title: metadata.title || extractDomainAsTitle(normalizedUrl),
       description: metadata.description,
-      summary: metadata.summary,
       favicon: getFaviconURL(normalizedUrl),
       updatedAt: Date.now(),
     });
@@ -307,7 +305,6 @@ async function processBookmarkViaAPI(
         title: metadata.title || "",
         description: metadata.description || "",
         url: normalizedUrl,
-        content: metadata.content,
       }),
       credentials: "include",
     });
@@ -318,15 +315,12 @@ async function processBookmarkViaAPI(
 
     const { tags: aiTags } = await tagsResponse.json();
 
-    // Combine manual and AI tags (deduplicate)
     const allTags = [...new Set([...manualTags, ...aiTags])];
 
-    // Add tags to item
     if (allTags.length > 0) {
       await addTagsToItem(db, userId, itemId, allTags);
     }
 
-    // Mark as ready to sync
     await db.items.update(itemId, {
       syncStatus: "pending",
       updatedAt: Date.now(),
@@ -334,7 +328,6 @@ async function processBookmarkViaAPI(
   } catch (error) {
     console.error("Background processing error:", error);
 
-    // Fallback: at least set a basic title
     await db.items.update(itemId, {
       title: extractDomainAsTitle(normalizedUrl),
       description: normalizedUrl,
@@ -356,7 +349,7 @@ async function addTagsToItem(
   if (tagNames.length === 0) return;
 
   // Slugify and deduplicate
-  const uniqueSlugs = [...new Set(tagNames.map(slugifyTag))];
+  const uniqueSlugs = [...new Set(tagNames.map(slugify))];
 
   // Get or create tags
   const tagIds: string[] = [];

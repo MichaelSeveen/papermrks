@@ -1,3 +1,4 @@
+import { getRandomHslColor } from "@/helpers/color-validator";
 import Dexie, { type Table } from "dexie";
 
 export type ItemType = "BOOKMARK" | "COLOR" | "TEXT";
@@ -8,34 +9,20 @@ export interface LocalItem {
   userId: string;
   collectionId: string;
   type: ItemType;
-
-  // Universal
   title: string;
   rawInput: string;
-
-  // Bookmark-specific
   url?: string;
   normalizedUrl?: string;
   description?: string;
-  summary?: string;
   favicon?: string;
-
-  // Color-specific
   colorValue?: string;
-
-  // Metadata
   isRead: boolean;
   isFavorite: boolean;
-
-  // Sync tracking
   syncStatus: SyncStatus;
   lastSyncedAt?: number;
   syncError?: string;
-
-  // Deletion tracking
   isDeleted?: boolean;
   deletedAt?: number;
-
   createdAt: number;
   updatedAt: number;
 }
@@ -146,31 +133,61 @@ export function closeDB() {
   }
 }
 
-// Helper to create default collection for new users
+const ensureDefaultCollectionPromises = new Map<
+  string,
+  Promise<LocalCollection>
+>();
+
+/**
+ * Helper to create default collection for new users.
+ * Uses a singleton promise pattern to prevent race conditions when
+ * multiple hooks call this concurrently on initial load.
+ */
 export async function ensureDefaultCollection(
   db: BookmarkDatabase,
   userId: string
 ): Promise<LocalCollection> {
-  const existing = await db.collections
-    .filter((collection) => collection.isDefault)
-    .first();
-
-  if (existing) {
-    return existing;
+  // If there's already an in-flight request for this user, wait for it
+  const existingPromise = ensureDefaultCollectionPromises.get(userId);
+  if (existingPromise) {
+    return existingPromise;
   }
 
-  const defaultCollection: LocalCollection = {
-    id: crypto.randomUUID(),
-    userId,
-    name: "Bookmarks",
-    slug: "bookmarks",
-    color: "#F2542C",
-    isDefault: true,
-    syncStatus: "pending",
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+  // Create a new promise for this operation
+  const promise = (async () => {
+    try {
+      // Use a transaction to ensure atomicity
+      return await db.transaction("rw", db.collections, async () => {
+        // Check inside transaction to prevent race conditions
+        const existing = await db.collections
+          .filter((collection) => collection.isDefault && !collection.isDeleted)
+          .first();
 
-  await db.collections.add(defaultCollection);
-  return defaultCollection;
+        if (existing) {
+          return existing;
+        }
+
+        const defaultCollection: LocalCollection = {
+          id: crypto.randomUUID(),
+          userId,
+          name: "Bookmarks",
+          slug: "bookmarks",
+          color: getRandomHslColor(),
+          isDefault: true,
+          syncStatus: "pending",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        await db.collections.add(defaultCollection);
+        return defaultCollection;
+      });
+    } finally {
+      // Clean up the promise after completion
+      ensureDefaultCollectionPromises.delete(userId);
+    }
+  })();
+
+  ensureDefaultCollectionPromises.set(userId, promise);
+  return promise;
 }

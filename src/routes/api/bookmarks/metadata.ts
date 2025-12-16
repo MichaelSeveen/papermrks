@@ -62,7 +62,6 @@ export const Route = createFileRoute("/api/bookmarks/metadata")({
                 success: metadata.success,
                 title: metadata.title,
                 description: metadata.description,
-                content: metadata.content,
               });
             } catch (error) {
               console.error("Metadata fetch error:", error);

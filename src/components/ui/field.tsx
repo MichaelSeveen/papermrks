@@ -1,6 +1,4 @@
-"use client";
-
-import { Field as FieldPrimitive } from "@base-ui-components/react/field";
+import { Field as FieldPrimitive } from "@base-ui/react/field";
 
 import { cn } from "@/lib/utils";
 
@@ -40,7 +38,7 @@ function FieldDescription({
 function FieldError({ className, ...props }: FieldPrimitive.Error.Props) {
   return (
     <FieldPrimitive.Error
-      className={cn("text-destructive-foreground text-xs", className)}
+      className={cn("text-destructive text-xs", className)}
       data-slot="field-error"
       {...props}
     />

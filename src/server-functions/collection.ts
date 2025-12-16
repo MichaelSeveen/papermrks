@@ -1,49 +1,31 @@
 import { createServerFn } from "@tanstack/react-start";
-import { z } from "zod";
 import { authenticationMiddleware } from "@/middleware/auth";
-import { slugifyTag } from "@/lib/ai";
+import { slugify } from "@/lib/slugify";
 import prisma from "@/lib/db";
-import { validateColor } from "@/helpers/color-validator";
+import { getRandomHslColor } from "@/helpers/color-validator";
+import {
+  createCollectionSchema,
+  moveItemsToCollectionSchema,
+  removeCollectionSchema,
+  updateCollectionSchema,
+} from "@/validations/collection.schema";
 
 const MAX_COLLECTIONS_PER_USER = 100;
 
-const CreateCollectionSchema = z.object({
-  name: z.string().min(1).max(100),
-  color: z.string(),
-});
-
-const MoveItemsToCollectionSchema = z.object({
-  itemIds: z.array(z.string()).min(1).max(1000),
-  targetCollectionId: z.string(),
-});
-
-const UpdateCollectionSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1).max(100).optional(),
-  color: z.string(),
-});
-
-const DeleteCollectionSchema = z.object({
-  id: z.string(),
-});
-
 export const createCollection = createServerFn({ method: "POST" })
-  .inputValidator(CreateCollectionSchema)
+  .inputValidator(createCollectionSchema)
   .middleware([authenticationMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.user) {
       throw new Error("Unauthorized");
     }
 
-    const { name, color } = data;
-
-    const isValidColor = validateColor(color);
+    const { name } = data;
 
     const userId = context.user.id;
 
-    // Check collection limit
     const userCollectionCount = await prisma.collection.count({
-      where: { userId, deletedAt: null }, // Only count active collections
+      where: { userId, deletedAt: null },
     });
 
     if (userCollectionCount >= MAX_COLLECTIONS_PER_USER) {
@@ -59,7 +41,7 @@ export const createCollection = createServerFn({ method: "POST" })
         userId,
         name,
         slug,
-        color: isValidColor ? color : "#F2542C",
+        color: getRandomHslColor(),
         isDefault: false,
       },
     });
@@ -68,20 +50,17 @@ export const createCollection = createServerFn({ method: "POST" })
   });
 
 export const updateCollection = createServerFn()
-  .inputValidator(UpdateCollectionSchema)
+  .inputValidator(updateCollectionSchema)
   .middleware([authenticationMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.user) {
       throw new Error("Unauthorized");
     }
 
-    const { id, name, color } = data;
-
-    const isValidColor = validateColor(color);
+    const { id, name } = data;
 
     const userId = context.user.id;
 
-    // Verify user owns collection
     const existing = await prisma.collection.findFirst({
       where: { id, userId, deletedAt: null },
     });
@@ -90,17 +69,11 @@ export const updateCollection = createServerFn()
       throw new Error("Collection not found or unauthorized");
     }
 
-    // Can't update default collection name
     if (existing.isDefault && name !== undefined) {
       throw new Error("Cannot rename default collection");
     }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
-
-    if (color !== undefined) {
-      updateData.color = isValidColor ? color : "#F2542C";
-    }
 
     if (name !== undefined && name !== existing.name) {
       const slug = generateUniqueSlug(userId, name);
@@ -117,7 +90,7 @@ export const updateCollection = createServerFn()
   });
 
 export const deleteCollection = createServerFn()
-  .inputValidator(DeleteCollectionSchema)
+  .inputValidator(removeCollectionSchema)
   .middleware([authenticationMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.user) {
@@ -127,7 +100,6 @@ export const deleteCollection = createServerFn()
     const { id } = data;
     const userId = context.user.id;
 
-    // Verify user owns collection
     const collection = await prisma.collection.findFirst({
       where: { id, userId, deletedAt: null },
     });
@@ -136,13 +108,11 @@ export const deleteCollection = createServerFn()
       throw new Error("Collection not found or unauthorized");
     }
 
-    // Can't delete default collection
     if (collection.isDefault) {
       throw new Error("Cannot delete default collection");
     }
 
     await prisma.$transaction(async (tx) => {
-      // Find default collection
       const defaultCollection = await tx.collection.findFirst({
         where: { userId, isDefault: true, deletedAt: null },
       });
@@ -151,7 +121,6 @@ export const deleteCollection = createServerFn()
         throw new Error("Default collection not found");
       }
 
-      // Move all items from deleted collection to default
       await tx.item.updateMany({
         where: { collectionId: id, userId },
         data: {
@@ -160,7 +129,6 @@ export const deleteCollection = createServerFn()
         },
       });
 
-      // Soft delete collection
       await tx.collection.update({
         where: { id },
         data: { deletedAt: new Date() },
@@ -187,7 +155,7 @@ export const getCollections = createServerFn({ method: "GET" })
   });
 
 export const moveItemsToCollection = createServerFn({ method: "POST" })
-  .inputValidator(MoveItemsToCollectionSchema)
+  .inputValidator(moveItemsToCollectionSchema)
   .middleware([authenticationMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.user) {
@@ -197,7 +165,6 @@ export const moveItemsToCollection = createServerFn({ method: "POST" })
     const { itemIds, targetCollectionId } = data;
     const userId = context.user.id;
 
-    // Verify target collection belongs to user
     const targetCollection = await prisma.collection.findFirst({
       where: {
         id: targetCollectionId,
@@ -210,7 +177,6 @@ export const moveItemsToCollection = createServerFn({ method: "POST" })
       throw new Error("Target collection not found or unauthorized");
     }
 
-    // Move items (only items belonging to user)
     const result = await prisma.item.updateMany({
       where: {
         id: { in: itemIds },
@@ -228,9 +194,6 @@ export const moveItemsToCollection = createServerFn({ method: "POST" })
     };
   });
 
-/**
- * Escapes special regex characters in a string
- */
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -244,16 +207,15 @@ async function generateUniqueSlug(
   userId: string,
   name: string
 ): Promise<string> {
-  const base = slugifyTag(name);
+  const base = slugify(name);
   const escaped = escapeRegex(base);
 
-  // Fetch all slugs starting with the base
   const existing = await prisma.collection.findMany({
     where: {
       userId,
-      deletedAt: null, // Only consider active collections
+      deletedAt: null,
       slug: {
-        startsWith: base, // "name", "name-1", "name-2", etc.
+        startsWith: base,
       },
     },
     select: { slug: true },
@@ -263,7 +225,6 @@ async function generateUniqueSlug(
     return base;
   }
 
-  // Build a regex to capture only `base-<number>`
   const regex = new RegExp(`^${escaped}-(\\d+)$`);
 
   const numbers = existing
@@ -274,7 +235,6 @@ async function generateUniqueSlug(
     .filter((n): n is number => n !== null);
 
   if (numbers.length === 0) {
-    // base exists but no numbered duplicates → use base-1
     return `${base}-1`;
   }
 

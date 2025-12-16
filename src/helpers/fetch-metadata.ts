@@ -1,83 +1,60 @@
-import { z } from "zod/v4";
-
-const JinaResponseSchema = z.looseObject({
-  data: z.looseObject({
-    title: z.string().optional(),
-    description: z.string().optional(),
-    content: z.string().optional(),
-    text: z.string().optional(), // Jina sometimes uses 'text' instead of 'content'
-    url: z.string().optional(),
-  }),
-});
+import mql, { MicrolinkError } from "@microlink/mql";
 
 export interface MetadataResult {
   success: boolean;
   title?: string;
   description?: string;
-  content?: string;
-  fallback?: boolean; // Indicates fallback data is being used
+  fallback?: boolean;
   error?: string;
 }
 
 /**
- * Fetches metadata for a URL using Jina AI Reader
+ * Fetches metadata for a URL using Microlink mql
  * Falls back gracefully if service is unavailable
  *
  * @param url - Normalized URL to fetch metadata for
- * @returns Metadata including title, description, and content
+ * @returns Metadata including title, description
  */
 export async function fetchMetadata(url: string): Promise<MetadataResult> {
   try {
-    const encoded = encodeURIComponent(url);
-
-    const response = await fetch(`https://r.jina.ai/${encoded}`, {
-      headers: {
-        Accept: "application/json",
-        "X-Return-Format": "json",
-        Authorization: `Bearer ${process.env.JINA_API_KEY}`,
-      },
-      signal: AbortSignal.timeout(10000), // 10s timeout
+    const { status, data: responseData } = await mql(url, {
+      video: false,
+      audio: false,
+      palette: false,
+      meta: true,
     });
 
-    if (!response.ok) {
+    if (!responseData) {
       return {
         success: false,
         fallback: true,
         title: extractDomainAsTitle(url),
         description: url,
-        error: `HTTP error: ${response.status}`,
+        error: `HTTP error: ${status}`,
       };
     }
-
-    const rawData = await response.json();
-    const parsed = JinaResponseSchema.safeParse(rawData);
-
-    if (!parsed.success) {
-      return {
-        success: false,
-        fallback: true,
-        title: extractDomainAsTitle(url),
-        description: url,
-        error: "Invalid Jina response",
-      };
-    }
-
-    const { data } = parsed.data;
 
     return {
       success: true,
-      title: data.title ?? extractDomainAsTitle(url),
-      description: data.description ?? "",
-      content: data.content ?? data.text ?? "", // Try both fields
+      title: responseData.title ?? extractDomainAsTitle(url),
+      description: responseData.description ?? "",
     };
-  } catch (error) {
-    // Network error or timeout
+  } catch (error: MicrolinkError | unknown) {
+    if (error instanceof MicrolinkError) {
+      return {
+        success: false,
+        fallback: true,
+        title: extractDomainAsTitle(url),
+        description: url,
+        error: error.message,
+      };
+    }
     return {
       success: false,
       fallback: true,
       title: extractDomainAsTitle(url),
       description: url,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: "Unknown error",
     };
   }
 }

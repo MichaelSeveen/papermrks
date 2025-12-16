@@ -1,7 +1,7 @@
 import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { slugify } from "./slugify";
 
-// Configure OpenRouter (cheaper than direct Anthropic)
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_API_KEY,
 });
@@ -13,21 +13,18 @@ const google = createGoogleGenerativeAI({
  * @param title - Bookmark title
  * @param description - Bookmark description
  * @param url - Bookmark URL
- * @param content - Optional page content (truncated)
  * @returns Array of suggested tags (lowercase, slugified)
  */
 export async function generateTags(
   title: string,
   description: string = "",
-  url: string,
-  content: string = ""
+  url: string
 ): Promise<string[]> {
   try {
     const prompt = `Analyze this bookmark and suggest 2-6 relevant tags.
                     Title: ${title} 
                     URL: ${url}
                     ${description ? `Description: ${description}` : ""}
-                    ${content ? `Content preview: ${content.slice(0, 1000)}` : ""}
                     Return tags that are:
                   - Specific and relevant
                   - Lowercase
@@ -41,14 +38,12 @@ export async function generateTags(
       temperature: 0.3,
     });
 
-    // Parse tags from response (handle various formats)
     const tags = extractTagsFromText(text);
 
-    // Return unique, slugified tags
-    return [...new Set(tags.map(slugifyTag))].slice(0, 5);
+    return [...new Set(tags.map(slugify))].slice(0, 5);
   } catch (error) {
     console.error("Error generating tags:", error);
-    // Fallback to domain-based tag
+
     return [extractDomainTag(url)];
   }
 }
@@ -109,19 +104,16 @@ export async function findSimilarBookmarks(
   limit: number = 5
 ): Promise<Array<{ itemId: string; score: number }>> {
   try {
-    // Simple similarity without AI (faster for MVP)
     const similarities = allItems
       .filter((item) => item.id !== targetItem.id)
       .map((item) => {
         let score = 0;
 
-        // Tag overlap (weighted heavily)
         const commonTags = item.tags.filter((tag) =>
           targetItem.tags.includes(tag)
         ).length;
         score += commonTags * 0.4;
 
-        // Title similarity (basic)
         const titleWords = new Set(targetItem.title.toLowerCase().split(/\s+/));
         const itemWords = item.title.toLowerCase().split(/\s+/);
         const commonWords = itemWords.filter(
@@ -172,8 +164,7 @@ export async function batchGenerateTags(
     const tags = await generateTags(
       item.title,
       item.description || "",
-      item.url,
-      item.content
+      item.url
     );
 
     results.set(item.id, tags);
@@ -184,8 +175,6 @@ export async function batchGenerateTags(
 
   return results;
 }
-
-// Helper functions
 
 /**
  * Extracts tags from AI response text
@@ -207,52 +196,15 @@ function extractTagsFromText(text: string): string[] {
   return tags;
 }
 
-/**
- * Converts tag to slug format
- * e.g., "Web Development" -> "web-development"
- */
-export function slugifyTag(tag: string): string {
-  return tag
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-/**
- * Extracts domain from URL as fallback tag
- */
 function extractDomainTag(url: string): string {
   try {
     const domain = new URL(url).hostname.replace(/^www\./, "");
-    return slugifyTag(domain.split(".")[0] || "bookmark");
+    return slugify(domain.split(".")[0] || "bookmark");
   } catch {
     return "bookmark";
   }
 }
 
-/**
- * Simple sleep utility
- */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// const TagsSchema = z.object({
-//   tags: z.array(z.string()).describe('Array of relevant tags (2-5 tags)')
-// });
-
-// const SummarySchema = z.object({
-//   summary: z.string().describe('2-3 sentence summary of the content')
-// });
-
-// const RecommendationsSchema = z.object({
-//   recommendations: z.array(z.object({
-//     itemId: z.string(),
-//     reason: z.string(),
-//     score: z.number().min(0).max(1)
-//   })).describe('Up to 5 related bookmarks with reasoning')
-// });

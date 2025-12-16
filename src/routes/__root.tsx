@@ -15,18 +15,6 @@ interface MyRouterContext {
   queryClient: QueryClient;
 }
 
-// const getCurrentSession = createServerFn({ method: "GET" }).handler(
-//   async () => {
-//     const headers = getRequestHeaders();
-//     console.log("Server Fn Headers:", headers);
-//     const session = await auth.api.getSession({
-//       headers: headers,
-//     });
-//     console.log("Server Fn Session:", session);
-//     return session;
-//   }
-// );
-
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   head: () => ({
     meta: [
@@ -38,7 +26,16 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "TanStack Start Starter",
+        title: "Papermrks - Your Personalized Bookmark Manager",
+        description: "Papermrks - Your Personalized Bookmark Manager",
+        keywords: [
+          "Papermrks",
+          "Bookmark Manager",
+          "Personalized Bookmark Manager",
+          "Bookmarks",
+        ],
+        author: "Papermrks",
+        publisher: "Papermrks",
       },
     ],
     links: [
@@ -52,17 +49,14 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   beforeLoad: async ({ location }) => {
     const session = await getCurrentUserFn();
 
-    // Check if the current route is an auth route
     const isAuthRoute =
       location.pathname.startsWith("/sign-in") ||
       location.pathname.startsWith("/sign-up");
 
-    // If not authenticated and not on an auth route, redirect to login
     if (!session && !isAuthRoute) {
       throw redirect({ to: "/sign-in" });
     }
 
-    // If authenticated and on login page, redirect to home
     if (session && isAuthRoute) {
       throw redirect({ to: "/" });
     }
@@ -74,7 +68,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>

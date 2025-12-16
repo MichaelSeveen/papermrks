@@ -52,28 +52,28 @@ export function parseMultipleInputs(text: string): ParsedItem[] {
 
 /**
  * Classifies a single input string as URL, color, or text.
- * Priority: URL > Color > Text
+ * Priority: Color > URL > Text (colors first to avoid URL encoding issues)
  */
 export function classifyInput(input: string): ParsedItem {
   const trimmed = input.trim();
 
-  // 1. Check if it's a valid URL
-  const urlResult = validateAndNormalizeURL(trimmed);
-  if (urlResult.isValid && urlResult.normalizedUrl) {
-    return {
-      type: "url",
-      rawValue: trimmed,
-      processedValue: urlResult.normalizedUrl,
-    };
-  }
-
-  // 2. Check if it's a valid color
+  // 1. Check if it's a valid color FIRST (before URL to avoid encoding issues)
   if (isValidColor(trimmed)) {
     const formatted = formatColor(trimmed);
     return {
       type: "color",
       rawValue: trimmed,
       processedValue: formatted || trimmed,
+    };
+  }
+
+  // 2. Check if it's a valid URL
+  const urlResult = validateAndNormalizeURL(trimmed);
+  if (urlResult.isValid && urlResult.normalizedUrl) {
+    return {
+      type: "url",
+      rawValue: trimmed,
+      processedValue: urlResult.normalizedUrl,
     };
   }
 

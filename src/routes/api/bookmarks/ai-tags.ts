@@ -7,7 +7,6 @@ const AITagsRequestSchema = z.object({
   title: z.string(),
   url: z.string(),
   description: z.string().optional(),
-  content: z.string().optional(),
 });
 
 export const Route = createFileRoute("/api/bookmarks/ai-tags")({
@@ -38,15 +37,10 @@ export const Route = createFileRoute("/api/bookmarks/ai-tags")({
                 );
               }
 
-              const { title, description, url, content } = parsed.data;
+              const { title, description, url } = parsed.data;
 
               // Generate tags
-              const tags = await generateTags(
-                title,
-                description || "",
-                url,
-                content
-              );
+              const tags = await generateTags(title, description || "", url);
 
               return Response.json({
                 success: true,

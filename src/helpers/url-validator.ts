@@ -1,16 +1,50 @@
 import { z } from "zod/v4";
 
-// Comprehensive URL validation schema
-// leniently accepts domains with TLDs (e.g. "awwwards.com", "google.co.uk")
+/**
+ * Patterns that indicate input is NOT a URL.
+ * These are checked BEFORE any URL normalization to avoid false positives.
+ */
+const NON_URL_PATTERNS: RegExp[] = [
+  /^#[0-9a-f]{3,8}$/i,
+  /^[a-z-]+\s*\(/i,
+  /^\d+(\.\d+)?\s+\d/,
+  /^[\d.]+$/,
+  /^\d+x\d+$/i,
+  /^[\d.]+[a-z]{1,4}$/i,
+];
+
+/**
+ * Quick check for patterns that look like URLs.
+ * Returns true if it has URL-like characteristics.
+ */
+function looksLikeURL(input: string): boolean {
+  const trimmed = input.trim();
+
+  if (trimmed.length < 4) return false;
+
+  if (/^https?:\/\//i.test(trimmed)) return true;
+
+  if (/^www\./i.test(trimmed)) return true;
+
+  if (!trimmed.includes(".")) return false;
+
+  for (const pattern of NON_URL_PATTERNS) {
+    if (pattern.test(trimmed)) return false;
+  }
+
+  return true;
+}
+
 const urlSchema = z
   .string()
   .transform((val) => {
-    let url = val.trim();
+    const url = val.trim();
     if (!url) return undefined;
 
-    // Add protocol if missing
+    if (!looksLikeURL(url)) return undefined;
+
     if (!/^https?:\/\//i.test(url)) {
-      url = "https://" + url;
+      return "https://" + url;
     }
     return url;
   })
@@ -19,8 +53,7 @@ const urlSchema = z
       if (!val) return false;
       try {
         const url = new URL(val);
-        // Basic check for dot in hostname to avoid treating single words as URLs
-        return url.hostname.includes(".") && val.length > 3;
+        return url.hostname.includes(".");
       } catch {
         return false;
       }
@@ -35,8 +68,8 @@ export interface URLValidationResult {
 }
 
 /**
- * Validates and normalizes a URL
- * Handles URLs with or without protocol (http://, https://)
+ * Validates and normalizes a URL.
+ * Pre-rejects obvious non-URLs (colors, CSS functions) before transformation.
  *
  * @param input - Raw URL input (e.g., "example.com" or "https://example.com")
  * @returns Validation result with normalized URL if valid
@@ -44,7 +77,7 @@ export interface URLValidationResult {
 export function validateAndNormalizeURL(input: string): URLValidationResult {
   const result = urlSchema.safeParse(input);
 
-  if (result.success) {
+  if (result.success && result.data) {
     return {
       isValid: true,
       normalizedUrl: result.data,
@@ -53,38 +86,12 @@ export function validateAndNormalizeURL(input: string): URLValidationResult {
 
   return {
     isValid: false,
-    error: result.error.message || "Invalid URL",
+    error: "Invalid URL",
   };
 }
 
 /**
- * Extracts and validates multiple URLs from pasted text
- * Handles newlines, spaces, and mixed content
- *
- * @param text - Pasted text potentially containing URLs
- * @returns Array of validated and normalized URLs
- */
-export function extractURLsFromText(text: string): string[] {
-  // Split by common delimiters
-  const potentialUrls = text
-    .split(/[\n\r\s,;]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-
-  const validUrls: string[] = [];
-
-  for (const input of potentialUrls) {
-    const result = validateAndNormalizeURL(input);
-    if (result.isValid && result.normalizedUrl) {
-      validUrls.push(result.normalizedUrl);
-    }
-  }
-
-  return validUrls;
-}
-
-/**
- * Extracts domain from URL for favicon fetching
+ * Extracts domain from URL for favicon fetching.
  *
  * @param url - Full URL
  * @returns Domain string or null if invalid
@@ -99,8 +106,8 @@ export function extractDomain(url: string): string | null {
 }
 
 /**
- * Generates favicon URL from domain
- * Uses Google's favicon service as fallback
+ * Generates favicon URL from domain.
+ * Uses Google's favicon service.
  *
  * @param url - Full URL
  * @returns Favicon URL

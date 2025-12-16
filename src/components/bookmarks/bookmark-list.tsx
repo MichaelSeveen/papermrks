@@ -1,11 +1,14 @@
 import { useRef } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { BookmarkItem } from "./bookmark-item";
 import type { LocalItem, LocalCollection } from "@/lib/dexie";
+import { ScrollArea } from "../ui/scroll-area";
+import { BookmarkItem } from "./bookmark-item";
+// import { useVirtualizer } from "@tanstack/react-virtual";
 
 interface BookmarkListProps {
   items: LocalItem[];
   selectedIds: Set<string>;
+  itemRefs: React.RefObject<{ [key: string]: HTMLDivElement | null }>;
+  highlightedId: string | null;
   onToggleSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRefetch: (id: string) => void;
@@ -16,6 +19,8 @@ interface BookmarkListProps {
 export function BookmarkList({
   items,
   selectedIds,
+  itemRefs,
+  highlightedId,
   onToggleSelect,
   onDelete,
   onRefetch,
@@ -24,21 +29,21 @@ export function BookmarkList({
 }: BookmarkListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const virtualizer = useVirtualizer({
-    count: items.length,
-    getScrollElement: () => parentRef.current,
-    // Dynamic size based on item type
-    estimateSize: (index) => {
-      const item = items[index];
-      if (!item) return 80;
+  // const virtualizer = useVirtualizer({
+  //   count: items.length,
+  //   getScrollElement: () => parentRef.current,
+  //   // Dynamic size based on item type
+  //   estimateSize: (index) => {
+  //     const item = items[index];
+  //     if (!item) return 80;
 
-      // BOOKMARK: title + description + favicon = taller
-      if (item.type === "BOOKMARK") return 85;
-      // COLOR/TEXT: simpler layout = shorter
-      return 70;
-    },
-    overscan: 10, // Increased for smoother scrolling
-  });
+  //     // BOOKMARK: title + description + favicon = taller
+  //     if (item.type === "BOOKMARK") return 50;
+  //     // COLOR/TEXT: simpler layout = shorter
+  //     return 70;
+  //   },
+  //   overscan: 10, // Increased for smoother scrolling
+  // });
 
   if (items.length === 0) {
     return (
@@ -50,8 +55,33 @@ export function BookmarkList({
   }
 
   return (
-    <div ref={parentRef} className="h-[calc(100vh-300px)] overflow-auto">
-      <div
+    <ScrollArea ref={parentRef} className="h-[calc(100vh-18.75rem)]">
+      <div>
+        {items.map((item) => (
+          <BookmarkItem
+            key={item.id}
+            ref={(el) => {
+              itemRefs.current[item.id] = el;
+            }}
+            item={item}
+            isHighlighted={highlightedId === item.id}
+            isSelected={selectedIds.has(item.id)}
+            onToggleSelect={() => onToggleSelect(item.id)}
+            onDelete={() => onDelete(item.id)}
+            onRefetch={() => onRefetch(item.id)}
+            collections={collections}
+            onMoveToCollection={(collectionId) =>
+              onMoveToCollection(item.id, collectionId)
+            }
+          />
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
+
+{
+  /* <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
           width: "100%",
@@ -75,21 +105,8 @@ export function BookmarkList({
                 transform: `translateY(${virtualItem.start}px)`,
               }}
             >
-              <BookmarkItem
-                item={item}
-                isSelected={selectedIds.has(item.id)}
-                onToggleSelect={() => onToggleSelect(item.id)}
-                onDelete={() => onDelete(item.id)}
-                onRefetch={() => onRefetch(item.id)}
-                collections={collections}
-                onMoveToCollection={(collectionId) =>
-                  onMoveToCollection(item.id, collectionId)
-                }
-              />
             </div>
           );
         })}
-      </div>
-    </div>
-  );
+      </div> */
 }

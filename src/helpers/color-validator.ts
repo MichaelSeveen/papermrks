@@ -13,7 +13,7 @@ export function formatColor(input: string) {
  * Generates a color that is visually pleasing and high-contrast.
  * Safe for production UI where consistency matters.
  */
-export function getConsistentRandomColor(saturation = 70, lightness = 50) {
+export function getRandomHslColor(saturation = 70, lightness = 50) {
   const hue = Math.floor(Math.random() * 360);
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
